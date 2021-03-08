@@ -1,6 +1,8 @@
 package joinop
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.rdd._
+import org.apache.spark.sql._
 
 object Main {
   def main(args: Array[String]) {
@@ -30,7 +32,7 @@ object Main {
     }
 
     // Parameter Setting
-    val dataPath = "C:\\Users\\10750\\Desktop\\Dataset\\dblp_10K.csv"
+    val dataPath = "C:\\Users\\10750\\Desktop\\Dataset\\dblp_1K.csv"
     val threshold = 2
     val joinColumn = 0
     val metric = edit_distance(_, _)
@@ -41,25 +43,36 @@ object Main {
       .config("spark.master", "local")
       .getOrCreate()
 
+    // Prepare data
     val df = spark.read
       .format("com.databricks.spark.csv")
       .option("header", "false")
       .option("inferSchema", "true")
       .option("delimiter", ",")
       .load(dataPath)
-    val rdd = df.rdd
+    val rdd: RDD[Row] = df.rdd
+    val table: RDD[(Int, String)] =
+      rdd
+      .zipWithIndex()
+      .map{case(a, b) => (b.toInt, a.toString)}
 
-    // Full cartesian product similarity self-join (quadratic complexity)
-    val t0 = System.nanoTime()
-    val cart = rdd.map(x => (x(joinColumn), x))
-        .cartesian(rdd.map(x => (x(joinColumn), x))) // [[key1, tuple1], [key2, tuple2]]
-      .filter(x => (x._1._1.toString != x._2._1.toString // avoid duplication in self-join
-        && metric(x._1._1.toString, x._2._1.toString) <= threshold))
-    val t1 = System.nanoTime()
-    println("Elapsed time: " + (t1 - t0)/(Math.pow(10,9)) + "s")
+    // Cartesian product based similarity self-join (quadratic complexity)
+    // Cartesian-product result can be used to verify other methods' correctness
+    val cart_result: RDD[((Int, String), (Int, String))] = time(
+      table.cartesian(table)
+        .map(x => (if (x._1._1 < x._2._1) x else (x._2, x._1)))
+        .distinct
+        .filter(x => (x._1._1 != x._2._1 // avoid duplication in self-join
+          && metric(x._1._2, x._2._2) <= threshold)) // threshold verification
+    )
+
+    val prefixJoin = new PrefixJoin(measure="ED", threshold=2, ordering="df", tokenize="qgram", q=Option(3))
+    val prefix_result: RDD[((Int, String), (Int, String))] = prefixJoin.selfJoin(table)
+    println(prefix_result.subtract(cart_result).count)
 
     // Dump the result to text file
-//    val result = cart.map(x => ((x._1._1.toString, x._2._1.toString))).coalesce(1).saveAsTextFile("result.txt")
+//    val result1 = cart_result.map(x => (x._1._2, x._2._2)).coalesce(1).saveAsTextFile("cart.txt")
+//    val result2 = prefix_result.map(x => (x._1._2, x._2._2)).coalesce(1).saveAsTextFile("prefix.txt")
 
     spark.stop()
   }
