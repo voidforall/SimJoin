@@ -85,7 +85,28 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
         }
       }
       case "idf" =>{
-        ???
+        if(table2 != null){
+          // Build up frequency decreasing vocabulary
+          val tokens: RDD[String] = table1.flatMap(x => x._2.distinct).union(table2.get.flatMap(x => x._2.distinct))
+          val token_freq: List[(String, Long)] = tokens.map(x => (x, 1)).countByKey().toList
+          val sorted_tokens: List[String] = token_freq.sortBy(_._2)(Ordering[Long].reverse).map(x => x._1)
+          val vocab: Map[String, Int] = sorted_tokens.zipWithIndex.toMap
+
+          // Sort each record according to the global ordering
+          val sorted1: RDD[(Int, Array[String])] = table1.map(x => (x._1, x._2.sortBy(token => vocab(token))))
+          val sorted2: Option[RDD[(Int, Array[String])]] = Option(table2.get.map(x => (x._1, x._2.sortBy(token => vocab(token)))))
+
+          return (sorted1, sorted2)
+        } else{
+          val tokens: RDD[String] = table1.flatMap(x => x._2.distinct)
+          val token_freq: List[(String, Long)] = tokens.map(x => (x, 1)).countByKey().toList
+          val sorted_tokens: List[String] = token_freq.sortBy(_._2)(Ordering[Long].reverse).map(x => x._1)
+          val vocab: Map[String, Int] = sorted_tokens.zipWithIndex.toMap
+
+          val sorted1: RDD[(Int, Array[String])] = table1.map(x => (x._1, x._2.sortBy(token => vocab(token))))
+
+          return (sorted1, null)
+        }
       }
       case _ => throw new Exception("Ordering not defined")
     }
