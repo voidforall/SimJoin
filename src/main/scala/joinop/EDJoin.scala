@@ -9,13 +9,15 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
 
   // Tokenize the String to generate positional q-gram
   // e.g. "science" -> Array[(sci, 0), (cie, 1), ... (nce, 4)]
+  // For q-grams, tokenizer adds q-1 # prefix and q-1 $suffix
   def tokenize(table: RDD[(Int, String)]): RDD[(Int, String, Array[(String, Int)])] ={
     tokenize match{
       case "qgram" =>
         if (q <= 0){
           throw new Exception("Qgram parameter q not set")
         } else{
-          table.map(x => (x._1, x._2, x._2.sliding(q).zipWithIndex.map(q => (q._1, q._2)).toArray))
+          table.map(x => (x._1, "#"*(q-1) + x._2 + "$"*(q-1),
+            ("#"*(q-1) + x._2 + "$"*(q-1)).sliding(q).zipWithIndex.map(q => (q._1, q._2)).toArray))
         }
       case _ => throw new Exception("Tokenization scheme not defined")
     }

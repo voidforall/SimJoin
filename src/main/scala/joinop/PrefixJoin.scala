@@ -13,20 +13,17 @@ import utils.Distance
  *    3. Select T tokens as *signatures*
  *    4. Check whether there is *overlap* for signatures
  */
-class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Option[Int]) extends Serializable{
+class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int) extends Serializable{
 
   // Tokenize the String to Array[String]
   // Options: <Char-level> q-gram, <Token-level> Space tokenization
+  // For q-grams, tokenizer adds q-1 # prefix and q-1 $suffix
   def tokenize(table: RDD[(Int, String)]): RDD[(Int, String, Array[String])]={
     tokenize match{
       case "space" =>
         table.map(x => (x._1, x._2, x._2.split(" ")))
       case "qgram" =>
-        if (q.getOrElse(null) == null){
-          throw new Exception("Qgram parameter q not set")
-        } else{
-          table.map(x => (x._1, x._2, x._2.sliding(q.get).toArray))
-        }
+          table.map(x => (x._1, "#"*(q-1) + x._2 + "$"*(q-1), ("#"*(q-1) + x._2 + "$"*(q-1)).sliding(q).toArray))
       case _ => throw new Exception("Tokenization scheme not defined")
     }
   }
@@ -35,7 +32,7 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
   // Similarity options: <Char-level> Edit Distance (ED), <Token-level> Jaccard, Cosine, Dice
   def prefixThreshold(length: Int): Int ={
     measure match{
-      case "ED" => (threshold * q.get).toInt + 1
+      case "ED" => (threshold * q).toInt + 1
       case "Jaccard" => ceil(length * (1-threshold)).toInt + 1
       case "Cosine" => ceil(length * (1-threshold*threshold)).toInt + 1
       case "Dice" => ceil(length * (1-threshold/(2-threshold))).toInt + 1
