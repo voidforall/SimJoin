@@ -45,7 +45,7 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
 
           val vocab_id = table1.context.broadcast(vocab.toList.sortBy(_._2).zipWithIndex.map(x => (x._1._1, x._2)).toMap)
 
-          (table1.map{ case(id, str, qgrams) => (id, str, qgrams.map(x => (vocab_id.value(x._1), x._2)).sortBy(x => x))}
+          (table1.map{ case(id, str, qgrams) => (id, str, qgrams.map(x => (vocab_id.value(x._1), x._2)).sortBy(x => x))} // sort by x => x means idf increasing then position increasing
             , Option(table2.get.map{ case(id, str, qgrams) => (id, str, qgrams.map(x => (vocab_id.value(x._1), x._2)).sortBy(x => x))}))
 
         } else{
@@ -78,15 +78,25 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
   // Calculate minimum prefix length, according to location-based mismatch filtering in EDJoin
   // Ref: Algorithm 2, 3 in Section 3 "Location-based mismatch filtering and ED-Join"
   def calcPrefixLen(qgrams: Array[(Int, Int)]): Int = {
+    if(qgrams.length <= threshold + 1)
+      return qgrams.length
+
     // Binary search within the range
     var left: Int = (threshold + 1).toInt
-    var right: Int = (q * threshold + 1).toInt
+    var right: Int = 0
     var mid: Int = 0
     var err: Int = 0
+
+    if(qgrams.length < q * threshold + 1){
+      right = qgrams.length
+    } else{
+      right = (q * threshold + 1).toInt
+    }
+
     while (left < right){
       mid = (left +  right) / 2
       err = minEditErrors(qgrams.take(mid))
-      if (err < threshold)
+      if (err <= threshold)
         left = mid + 1
       else
         right = mid
@@ -95,20 +105,19 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
   }
 
   // Generate the prefix for each record, i.e. only select the first T tokens as signatures
-  // and then build up the inverted index as (qgram, Array[instance])
+  // and then build up the inverted index as (q-gram, Array[Tuple])
   // p.s. EDJoin applies location-based filtering to select minimum prefix length, rather than (q * threshold + 1)
   def buildIndex(table: RDD[(Int, String, Array[(Int, Int)])]): RDD[(Int, Array[(Int, Int, Array[(Int, Int)], String)])] = {
     val tokens_map = table.flatMap{
       case (id, str, qgrams) =>
-//        val prefixLen: Int = calcPrefixLen(qgrams) // TODO: debug overpruning
-        val prefixLen: Int = (threshold * q).toInt + 1
+        val prefixLen: Int = calcPrefixLen(qgrams)
         val prefix: Array[(Int, Int)] = qgrams.take(prefixLen)
         prefix.zipWithIndex.map{ case (qgram, index) =>
-          (qgram._1, (id, index, qgrams, str))
+          (qgram._1, (id, qgram._2, qgrams, str)) // Note: the q-grams have been ordered and we need to use original position rather than index
         }
     }
     tokens_map.groupByKey()
-      .filter(_._2.size > 1) // filter out tokens with only one entry
+      .filter(_._2.size > 1) // filter out tokens with only one entry value
       .map(x => (x._1, x._2.toArray))
   }
 
@@ -240,7 +249,7 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
       val locCount = minEditErrors(mismatchedQ)
       if (locCount <= threshold){ // location-based mismatch filtering
         val bound: Int = contentFilter(candidate._1._3, candidate._2._3, mismatchedQ)
-        if(bound <= 2 * threshold){ // content filtering
+        if(true || bound <= 2 * threshold){ // content filtering TODO: debug content filtering
           if (measureObj.editDistance(candidate._1._3, candidate._2._3) <= threshold) // last option: compute edit distance
             valid = true
         }
@@ -263,7 +272,7 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
     })
       .flatMap(x => x)
       .filter(x => x._1._1 != x._2._1  && // not the same id
-//        math.abs(x._1._2 - x._2._2) <= threshold && // positional filtering // TODO: debug overpruning
+        math.abs(x._1._2 - x._2._2) <= threshold && // positional filtering
         math.abs(x._1._3.length - x._2._3.length) <= threshold // length filtering
       )
       .map(x => ((x._1._1, x._1._3, x._1._4), (x._2._1, x._2._3, x._2._4)))
