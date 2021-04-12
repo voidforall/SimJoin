@@ -1,6 +1,5 @@
 package joinop
 
-import scala.reflect.ClassTag
 import org.apache.spark.rdd._
 
 class Cartesian(measure: String, threshold: Double) extends Serializable{

@@ -107,17 +107,31 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
 
   // Similarity self join, with distinct keys by default
   def selfJoin(table: RDD[(Int, String)]): RDD[((Int, String), (Int, String))] = {
+
+    val ts = Calendar.getInstance().getTimeInMillis
     val tokenized: RDD[(Int, String, Array[String])] = tokenize(table)
+    val te1 = Calendar.getInstance().getTimeInMillis
+    println("[Tokenize] Elapsed time: " + (te1 - ts) / 1000.0 + "s")
+    println(tokenized.count)
+
     val ordered: RDD[(Int, String, Array[Int])] = order(tokenized, null)._1
+    val te2 = Calendar.getInstance().getTimeInMillis
+    println("[Order] Elapsed time: " + (te2 - ts) / 1000.0 + "s")
+    println(ordered.count)
 
     val prefixed: RDD[(Int, String, Array[Int])] = generatePrefix(ordered)
-
     // Build up the inverted index
     val id_token: RDD[((Int, String), Int)] = prefixed.map(x => ((x._1, x._2), x._3)).flatMapValues(x => x)
     val inverted_index: RDD[(Int, List[(Int, String)])] = id_token
       .map({case(a, b) => (b, a)})
       .groupByKey
       .mapValues(_.toList)
+    val te3 = Calendar.getInstance().getTimeInMillis
+    println("[Buildindex] Elapsed time: " + (te3 - ts) / 1000.0 + "s")
+    println(inverted_index.count)
+
+    //    println("[PrefixJoin] Number of token entries: " + inverted_index.count)
+//    println("[PrefixJoin] Number of useful token entries: " + inverted_index.filter(x => x._2.length > 1).count)
 
     // Generate potential candidate pairs
     val potential_candidates: RDD[(Int, List[List[(Int, String)]])] = inverted_index.map(pair => (pair._1, pair._2.combinations(2).toList))
@@ -128,11 +142,18 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
       .flatMap(x => x)
       .filter(x => x._1 != x._2)
       .distinct
+//    println("[PrefixJoin] Number of distinct potential pairs: " + candidates.
+//      map(x => if (x._1._1 < x._2._1) (x._1._1, x._2._1) else (x._2._1, x._1._1)).distinct.count)
 
-//    println("[Prefix] There are " + candidates.count.toString + " candidate pairs after prefix pruning.")
+    val te4 = Calendar.getInstance().getTimeInMillis
+    println("[Candidates] Elapsed time: " + (te4 - ts) / 1000.0 + "s")
+    println(candidates.count)
 
     // Verification step
     val verified_pairs: RDD[((Int, String), (Int, String))] = verify(candidates)
+    val te5 = Calendar.getInstance().getTimeInMillis
+    println("[Candidates] Elapsed time: " + (te5 - ts) / 1000.0 + "s")
+    println(verified_pairs.count)
 
     // Format the output
     val output_pairs: RDD[((Int, String), (Int, String))] = verified_pairs
