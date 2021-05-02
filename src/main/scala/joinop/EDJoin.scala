@@ -5,7 +5,7 @@ import org.apache.spark.rdd.RDD
 import utils.Distance
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
-class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int) extends Serializable{
+class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean) extends Serializable{
   protected val measureObj = new Distance()
 
   // Tokenize the String to generate positional q-gram
@@ -264,33 +264,33 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
   def selfJoin(table: RDD[(Int, String)]): RDD[((Int, String), (Int, String))] = {
 
     val ts = Calendar.getInstance().getTimeInMillis
+    val getTime = Calendar.getInstance().getTimeInMillis
+
+    // Tokenization as positional q-grams (character-level)
     val tokenized: RDD[(Int, String, Array[(String, Int)])] = tokenize(table)
-    val te1 = Calendar.getInstance().getTimeInMillis
-    println("[Tokenize] Elapsed time: " + (te1 - ts) / 1000.0 + "s")
-    println(tokenized.count)
+    if (stepReport) {
+      println(tokenized.count)
+      println("[Tokenize] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
 
+    // Ordering with specified global order
     val ordered: RDD[(Int, String, Array[(Int, Int)])] = order(tokenized, null)._1
-    val te2 = Calendar.getInstance().getTimeInMillis
-    println("[Order] Elapsed time: " + (te2 - ts) / 1000.0 + "s")
-    println(ordered.count)
-//    println("[EDJoin] Stats of prefix length: " + ordered.map(x => calcPrefixLen(x._3)).stats())
+    if (stepReport) {
+      println(ordered.count)
+      println("[Order] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
 
-
+    // Build up the inverted index
     val invertedIndex: RDD[(Int, Array[(Int, Int, Array[(Int, Int)], String)])] = buildIndex(ordered)
-    val te3 = Calendar.getInstance().getTimeInMillis
-    println("[Buildindex] Elapsed time: " + (te3 - ts) / 1000.0 + "s")
-    println(invertedIndex.count)
-//    println("[EDJoin] Number of token entries: " + invertedIndex.count)
-//    println("[EDJoin] Number of useful token entries: " + invertedIndex.filter(x => x._2.length > 1).count)
+    if (stepReport) {
+      println("[Buildindex] Number of token entries: " + invertedIndex.count)
+      println("[Buildindex] Number of useful token entries: " + invertedIndex.filter(x => x._2.length > 1).count)
+      println("[Buildindex] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
 
     // Generate potential candidate pairs
     val potential_candidates: RDD[(Int, Array[Array[(Int, Int, Array[(Int, Int)], String)]])] =
       invertedIndex.map(pair => (pair._1, pair._2.combinations(2).toArray))
-//    println("[EDJoin] Number of distinct potential pairs: " + potential_candidates.
-//      values.map(x => x.map {
-//      case Array(a, b) => (a, b)
-//    })
-//      .flatMap(x => x).map(x => if (x._1._1 < x._2._1) (x._1._1, x._2._1) else (x._2._1, x._1._1)).distinct.count)
     val candidates: RDD[((Int, Array[(Int, Int)], String), (Int, Array[(Int, Int)], String))] = potential_candidates.
       values.map(x => x.map {
       case Array(a, b) => (a, b)
@@ -302,16 +302,20 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
       )
       .map(x => ((x._1._1, x._1._3, x._1._4), (x._2._1, x._2._3, x._2._4)))
       .distinct
-    val te4 = Calendar.getInstance().getTimeInMillis
-    println("[Candidates] Elapsed time: " + (te4 - ts) / 1000.0 + "s")
-    println(candidates.count)
+    if (stepReport) {
+      println("[Candidates] Number of distinct potential pairs: " +
+        candidates.map(x => if (x._1._1 < x._2._1) (x._1._1, x._2._1) else (x._2._1, x._1._1)).distinct.count)
+      println("[Candidates] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
 
-    // Verification step in the framework
+    // Verification step
     val verified_pairs: RDD[((Int, String), (Int, String))] = candidates.filter(x => verify(x._1, x._2))
       .map(x => ((x._1._1, x._1._3), (x._2._1, x._2._3)))
     val te5 = Calendar.getInstance().getTimeInMillis
-    println("[Candidates] Elapsed time: " + (te5 - ts) / 1000.0 + "s")
-    println(verified_pairs.count)
+    if (stepReport) {
+      println(verified_pairs.count)
+      println("[Verification] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
 
     // Format the output
     val output_pairs: RDD[((Int, String), (Int, String))] = verified_pairs

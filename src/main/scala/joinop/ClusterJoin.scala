@@ -18,7 +18,6 @@ class ClusterJoin(measure: String, threshold: Double, anchorNum: Int) extends Se
       for(prevPoint <- homePoints){
         // Increasing id and length filtering
         if( (point._2._2._2.length - prevPoint._2.length) <= threshold)
-//        if(point._2._2._1 > prevPoint._1 && (point._2._2._2.length - prevPoint._2.length) <= threshold){
           // Call the metric function to verify the pair
           if(measureObj.editDistance(prevPoint._2, point._2._2._2) <= threshold)
             result = result :+ (prevPoint, point._2._2)
