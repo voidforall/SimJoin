@@ -5,12 +5,22 @@ import org.apache.spark.rdd.RDD
 import utils.Distance
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
+/*
+ * EdJoin optimizes prefix filtering based similarity join,
+ * with location-based mismatch filtering.
+ *
+ * EdJoin is designed for edit distance measurement, and cannot
+ * easily extend to other metrics like Jaccard and Cosine.
+ *
+ * Reference: Chuan Xiao, Ed-Join: an efficient algorithm for similarity joins with edit distance constraints, VLDB 08'
+ */
+
 class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean) extends Serializable{
   protected val measureObj = new Distance()
 
   // Tokenize the String to generate positional q-gram
   // e.g. "science" -> Array[(sci, 0), (cie, 1), ... (nce, 4)]
-  // For q-grams, tokenizer adds q-1 # prefix and q-1 $suffix
+  // For q-grams, tokenizer adds q-1 # prefix and q-1 $suffix to avoid length errors
   def tokenize(table: RDD[(Int, String)]): RDD[(Int, String, Array[(String, Int)])] ={
     tokenize match{
       case "qgram" =>

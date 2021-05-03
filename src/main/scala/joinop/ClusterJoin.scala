@@ -5,6 +5,16 @@ import org.apache.spark.rdd._
 import org.apache.spark.HashPartitioner
 import utils.Distance
 
+/*
+ * ClusterJoin is a clustering-based method for similarity join,
+ * which guarantees load balancing with high probability.
+ *
+ * The implementation is scalable and extensible to any distance function
+ * within the MapReduce framework.
+ *
+ * Reference: Das Sarma Akash, Clusterjoin: A similarity joins framework using map-reduce, VLDB 14'
+ */
+
 class ClusterJoin(measure: String, threshold: Double, anchorNum: Int) extends Serializable{
   var measureObj = new Distance()
 
@@ -16,7 +26,7 @@ class ClusterJoin(measure: String, threshold: Double, anchorNum: Int) extends Se
     while (cluster.hasNext) {
       val point = cluster.next
       for(prevPoint <- homePoints){
-        // Increasing id and length filtering
+        // Apply length filtering
         if( (point._2._2._2.length - prevPoint._2.length) <= threshold)
           // Call the metric function to verify the pair
           if(measureObj.editDistance(prevPoint._2, point._2._2._2) <= threshold)

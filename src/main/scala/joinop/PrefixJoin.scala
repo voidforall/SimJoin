@@ -6,13 +6,16 @@ import org.apache.spark.rdd._
 import utils.Distance
 
 /*
- * Basic Prefix Join
  * The class implements the basic prefix filtering framework:
  *    1. Define a *global* order
  *    2. *Order tokens* based on the global order
  *    3. Select T tokens as *signatures*
  *    4. Check whether there is *overlap* for signatures
+ *
+ * This implementation serves as the baseline and is open to
+ * complement with further optimizations like positional filtering.
  */
+
 class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean) extends Serializable{
   var measureObj = new Distance()
 
