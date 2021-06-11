@@ -15,7 +15,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
  * Reference: Chuan Xiao, Ed-Join: an efficient algorithm for similarity joins with edit distance constraints, VLDB 08'
  */
 
-class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean) extends Serializable{
+class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean, detailReport: Boolean) extends Serializable{
   protected val measureObj = new Distance()
 
   // Tokenize the String to generate positional q-gram
@@ -262,7 +262,7 @@ class EDJoin(measure: String, threshold: Double, ordering: String, tokenize: Str
       if (locCount <= threshold){ // location-based mismatch filtering
 //        val bound: Int = contentFilter(candidate._1._3, candidate._2._3, mismatchedQ)
         val bound = 0
-        if(true || bound <= 2 * threshold){ // content filtering TODO: debug content filtering
+        if(true || bound <= 2 * threshold){ // content filtering 
           if (measureObj.editDistance(candidate._1._3, candidate._2._3) <= threshold) // last option: compute edit distance
             valid = true
         }

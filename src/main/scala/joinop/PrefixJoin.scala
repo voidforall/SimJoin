@@ -5,6 +5,8 @@ import java.util.Calendar
 import org.apache.spark.rdd._
 import utils.Distance
 
+import java.io.{BufferedWriter, FileWriter}
+
 /*
  * The class implements the basic prefix filtering framework:
  *    1. Define a *global* order
@@ -16,7 +18,7 @@ import utils.Distance
  * complement with further optimizations like positional filtering.
  */
 
-class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean) extends Serializable{
+class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize: String, q: Int, stepReport: Boolean, detailReport: Boolean) extends Serializable{
   var measureObj = new Distance()
 
   // Tokenize the String to Array[String]
@@ -37,7 +39,7 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
   def prefixThreshold(length: Int): Int ={
     measure match{
       case "ED" => (threshold * q).toInt + 1
-      case "Jaccard" => ceil(length * (1-threshold)).toInt + 1
+      case "Jaccard" => ceil(length * threshold).toInt + 1
       case "Cosine" => ceil(length * (1-threshold*threshold)).toInt + 1
       case "Dice" => ceil(length * (1-threshold/(2-threshold))).toInt + 1
       case _ => throw new Exception("Measurement not defined")
@@ -100,7 +102,7 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
   def verify(candidates: RDD[((Int, String), (Int, String))]): RDD[((Int, String), (Int, String))] = {
     measure match{
       case "ED" => candidates.filter(x => measureObj.editDistance(x._1._2, x._2._2) <= threshold)
-      case "Jaccard" => candidates.filter(x => measureObj.jaccard(x._1._2.toSet, x._2._2.toSet) <= threshold)
+      case "Jaccard" => candidates.filter(x => measureObj.jaccard(x._1._2.split(" ").toSet, x._2._2.split(" ").toSet) <= threshold)
       case "Cosine" => candidates.filter(x => measureObj.cosine(x._1._2.toSet, x._2._2.toSet) <= threshold)
       case "Dice" => candidates.filter(x => measureObj.dice(x._1._2.toSet, x._2._2.toSet) <= threshold)
       case _ => throw new Exception("Measurement not defined")
@@ -139,6 +141,15 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
       println("[Buildindex] Number of useful token entries: " + inverted_index.filter(x => x._2.length > 1).count)
       println("[Buildindex] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
     }
+    if (detailReport){
+      println("[Buildindex] Number of useful token entries: " + inverted_index.filter(x => x._2.length > 1).count)
+      val prefix_list = inverted_index.filter(x => x._2.length > 1).map(x => x._2.length).collect()
+      val prefix_file = "/scratch/yuan/data/log_data/prefix.txt"
+      val prefix_writer = new BufferedWriter(new FileWriter(prefix_file))
+      for (i <- prefix_list)
+        prefix_writer.write(i.toString + "\n")
+      prefix_writer.close()
+    }
 
     // Generate potential candidate pairs
     val potential_candidates: RDD[(Int, List[List[(Int, String)]])] = inverted_index.map(pair => (pair._1, pair._2.combinations(2).toList))
@@ -153,6 +164,10 @@ class PrefixJoin(measure: String, threshold: Double, ordering: String, tokenize:
       println("[Candidates] Number of distinct potential pairs: " +
         candidates.map(x => if (x._1._1 < x._2._1) (x._1._1, x._2._1) else (x._2._1, x._1._1)).distinct.count)
       println("[Candidates] Elapsed time: " + (getTime - ts) / 1000.0 + "s")
+    }
+    if (detailReport){
+      println("[Candidates] Number of distinct potential pairs: " +
+        candidates.map(x => if (x._1._1 < x._2._1) (x._1._1, x._2._1) else (x._2._1, x._1._1)).distinct.count)
     }
 
     // Verification step
